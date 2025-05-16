@@ -32,22 +32,37 @@ package ml
 import "C"
 
 import (
-    "unsafe"
 
+    "fmt"
+    "reflect"
     "runtime"
     "sync"
+    "unsafe"
 )
 
+// Handle to libtorch Model
 type Model struct {
     p *C.struct_Model
     once sync.Once
 }
 
+// Handle to libtorch Tensor
 type Tensor struct {
     p *C.struct_Tensor
     once sync.Once
 }
 
+// Flattened represents a tensor in Go.
+// Data contains the elements flattened into a single-dimensional slice,
+// and Shape holds the size of each dimension of the original tensor.
+type Flattened[T any] struct {
+    Data  []T
+    Shape []int
+}
+
+// CreateModelWithOpts creates a new Model.
+// The options string is model-specific and may vary depending on the implementation.
+// If the model cannot be created successfully, the returned Model will report IsValid() == false.
 func CreateModelWithOpts (model string, options string) Model {
     cModel := C.CString(model)
     cOpts := C.CString(options)
@@ -61,10 +76,14 @@ func CreateModelWithOpts (model string, options string) Model {
     return o
 }
 
+// CreateModel creates a new Model with default values.
+// If the model cannot be created successfully, the returned Model will report IsValid() == false.
 func CreateModel(model string) Model {
     return CreateModelWithOpts(model, "")
 }
 
+// Delete releases native resources associated with the Model.
+// Useful for freeing memory explicitly before garbage collection.
 func (o *Model) Delete() {
     o.once.Do(func() {
         if o.p != nil {
@@ -74,30 +93,35 @@ func (o *Model) Delete() {
     })
 }
 
-func (o *Model) Bad() bool {
-    return o.p == nil
+// IsValid reports whether the model is properly initialized and usable.
+func (o *Model) IsValid() bool {
+    return o.p != nil
 }
 
-func (o Model) Inference(data Tensor) Tensor {
-    //cResult := unsafe.Pointer(&result[0])
-    //cMaxSize := (C.size_t)(len(result))
-    //return int(C.Infer(o.p, data.p, cResult, cMaxSize))
-    return Tensor{}
+func (o *Model) Inference(data Tensor) Tensor {
+    return Tensor{p:C.Infer(o.p, data.p)}
 }
 
-func CreateTensor[T any](data []T, shape []int) Tensor {
+func (o *Model) Training(data Tensor, target Tensor, epochs int) {
+    cEpochs  := (C.int)(epochs)
+    C.Train(o.p, data.p, target.p, cEpochs)
+}
+
+// CreateTensor creates a new Tensor from a flattened data slice and shape.
+// If creation fails, the returned Tensor will report IsValid() == false.
+func CreateTensor[T any](flattened Flattened[T]) Tensor {
     var o Tensor
 
-    if len(data) == 0 {
+    if len(flattened.Data) == 0 {
         return Tensor{p:nil}
     }
 
-    cData  := unsafe.Pointer(&data[0])
-    cSize  := (C.size_t)(len(data))
-    cShape := (*C.size_t)(unsafe.Pointer(&shape[0]))
-    cDim   := (C.size_t)(len(shape))
+    cData  := unsafe.Pointer(&flattened.Data[0])
+    cSize  := (C.size_t)(len(flattened.Data))
+    cShape := (*C.size_t)(unsafe.Pointer(&flattened.Shape[0]))
+    cDim   := (C.size_t)(len(flattened.Shape))
 
-    switch any(data).(type) {
+    switch any(flattened.Data).(type) {
         case []uint8:
             o = Tensor{p:C.NewTensorUInt8(cData, cSize, cShape, cDim)}
         case []uint16:
@@ -129,6 +153,65 @@ func CreateTensor[T any](data []T, shape []int) Tensor {
     return o
 }
 
+// Flatten takes an arbitrarily nested array (of arrays) of generic type T 
+// and returns a Flattened[T] containing the flattened data and shape.
+// The input can have any number of dimensions.
+// Returns an error if input is not a valid nested array of T.
+func Flatten[T any](input any) (Flattened[T], error) {
+    var flat []T
+    shape, err := flattenRecursive(reflect.ValueOf(input), &flat)
+    if err != nil {
+        return Flattened[T]{}, err
+    }
+    return Flattened[T]{Data: flat, Shape: shape}, nil
+}
+
+func flattenRecursive[T any](v reflect.Value, out *[]T) ([]int, error) {
+    equalShape := func (a, b []int) bool {
+        if len(a) != len(b) {
+            return false
+        }
+        for i := range a {
+            if a[i] != b[i] {
+                return false
+            }
+        }
+        return true
+    }
+    switch v.Kind() {
+    case reflect.Slice, reflect.Array:
+        length := v.Len()
+        var innerShape []int
+        for i := 0; i < length; i++ {
+            subShape, err := flattenRecursive(v.Index(i), out)
+            if err != nil {
+                return nil, err
+            }
+            if i == 0 {
+                innerShape = subShape
+            } else if !equalShape(innerShape, subShape) {
+                return nil, fmt.Errorf("ragged arrays not supported")
+            }
+        }
+        return append([]int{length}, innerShape...), nil
+    default:
+        val := v.Interface()
+        if t, ok := val.(T); ok {
+            *out = append(*out, t)
+            return nil, nil
+        } else {
+            return nil, fmt.Errorf("element type mismatch: expected %T, got %T", *new(T), val)
+        }
+    }
+}
+
+// IsValid reports whether the tensor is properly initialized and usable.
+func (o *Tensor) IsValid() bool {
+    return o.p != nil
+}
+
+// Delete releases native resources associated with the Tensor.
+// Useful for freeing memory explicitly before garbage collection.
 func (o *Tensor) Delete() {
     o.once.Do(func() {
         if o.p != nil {

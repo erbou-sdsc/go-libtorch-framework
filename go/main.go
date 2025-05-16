@@ -42,11 +42,29 @@ func main() {
 
     model := ml.CreateModel("mnist")
     defer model.Delete()
-    if model.Bad() {
+    if !model.IsValid() {
         fmt.Println("No model")
         return
     }
 
+    rows, cols, depth := 3, 4, 2
+    data := make([]float32, cols*rows*depth)
+    shape := []int{ rows, cols, depth }
+    for i := 0; i < rows; i++ {
+        for j := 0; j < cols; j++ {
+            for z := 0; z < depth; z++ {
+                data[i*cols*depth+j*depth+z] = (float32(i)*0.3+float32(j)+float32(z)*0.5)
+            }
+        }
+    }
+
+    tensor := ml.CreateTensor(ml.Flattened[float32]{Data:data,Shape:shape})
+    defer tensor.Delete()
+    if !tensor.IsValid() {
+        fmt.Println("Bad Tensor")
+        return
+    }
+    tensor.Delete()
 
     /*
     inputSize := int(C.torch_model_input_size(model))

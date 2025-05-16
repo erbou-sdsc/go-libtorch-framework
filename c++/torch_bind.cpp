@@ -90,24 +90,9 @@ NEW_TENSOR_FN(Float32)
 NEW_TENSOR_FN(Float64)
 #undef NEW_TENSOR_FN
 
+
 extern "C" void FreeTensor(struct Tensor* tensor) {
     delete tensor ;
-}
-
-extern "C" struct Tensor* Infer(struct Model* model, struct Tensor* data, void* result_buffer, size_t buffer_size) {
-    try {
-        c10::InferenceMode guard;
-
-        data->to(device_manager::device());
-
-        model->eval();
-
-        return new Tensor{model->forward(*data)};
-
-    } catch (const std::exception& e) {
-	std::cerr << "Exception - " << e.what() << std::endl ;
-	return 0;
-    }
 }
 
 extern "C" size_t Flatten(struct Tensor* tensor, void* result_buffer, size_t buffer_size, size_t* shape, size_t maxDim) {
@@ -145,16 +130,55 @@ extern "C" size_t Flatten(struct Tensor* tensor, void* result_buffer, size_t buf
     return tensor->tensor().dim();
 }
 
+extern "C" struct Tensor* Infer(struct Model* model, struct Tensor* data) {
+    if (model == nullptr || data == nullptr) {
+        return nullptr ;
+    }
+
+    try {
+        c10::InferenceMode guard;
+
+        data->to(device_manager::device());
+
+        model->module().eval();
+
+        return new Tensor{model->forward(*data)};
+
+    } catch (const std::exception& e) {
+	std::cerr << "Exception - " << e.what() << std::endl ;
+	return nullptr;
+    }
+}
+
+// TODO:
+// This is not generic, a different Train method must be created for each number of targets, and loss function.
+// An alternative would be to set targets individually, e.g. policies and rewards, and use a model specific loss method in Train.
+// E.g. SetTrainTarget(Model* model, std::string& targetId, Tensor*);
+//      Train(Model* model, Tensor* data, int epochs) {
+//        ...
+//        output = model->forward(*data);
+//        auto loss = model->compute_loss(output)
+//        loss.backward()
+//        ...
+//      }
+//
+extern "C" void SetTrainTarget(struct Model* model, char const* targetName, struct Tensor* data) {
+}
+
 extern "C" void Train(struct Model* model, struct Tensor* data, struct Tensor* target, int epochs) {
+    if (model == nullptr || data == nullptr || target == nullptr || epochs == 0) {
+        return ;
+    }
+
     try {
         data->to(device_manager::device());
         target->to(device_manager::device());
-
-        model->train();
+        model->module().train();
 
         for (size_t epoch = 0; epoch < epochs; ++epoch) {
             model->optimizer()->zero_grad();
             auto output = model->forward(*data);
+
             auto loss = torch::nll_loss(output, *target);
     
             loss.backward();

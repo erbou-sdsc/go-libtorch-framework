@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <torch/torch.h>
 
 class device_manager {
@@ -47,28 +48,35 @@ private:
 };
 
 
-struct Model : torch::nn::Module {
+// struct Model : torch::nn::Module {
+struct Model {
     using shape_t = at::IntArrayRef ;
 
     Model() : device{device_manager::device()} {}
     virtual ~Model() = default ;
 
     virtual torch::Tensor forward(torch::Tensor const x) = 0 ;
-    virtual const shape_t ishape() const = 0 ;
-    virtual const shape_t oshape() const = 0 ;
-    virtual const torch::ScalarType itype() const = 0 ;
-    virtual const torch::ScalarType otype() const = 0 ;
     virtual std::shared_ptr<torch::optim::Optimizer> optimizer() = 0 ;
+    virtual torch::nn::Module& module() = 0 ;
 
-    const size_t isize() const {
-        return [](shape_t s) { return std::accumulate(s.begin(), s.end(), 1, std::multiplies()); }(ishape());
+    torch::nn::Module const& module() const {
+        return module();
     }
 
-    const size_t osize() const {
-        return [](auto s) { return std::accumulate(s.begin(), s.end(), 1, std::multiplies()); }(oshape());
+    operator torch::nn::Module () {
+        return module();
+    }
+
+    operator torch::nn::Module const& () const {
+        return module();
+    }
+
+    void set_target(const std::string_view id, const torch::Tensor& tensor) {
+        targets_[std::string(id)] = tensor ;
     }
 
     torch::Device const device;
+    std::unordered_map<std::string, torch::Tensor> targets_;
 };
 
 class model_factory {
