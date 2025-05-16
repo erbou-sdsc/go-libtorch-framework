@@ -47,7 +47,31 @@ target_link_libraries(mnist
     pthread
 )
 
+# Determine platform-specific shared lib name and rpath flag
+if(APPLE)
+    set(RPATH_FLAG "-Wl,-rpath,${CMAKE_CURRENT_SOURCE_DIR}/build")
+elseif(UNIX)
+    set(RPATH_FLAG "-Wl,-rpath=${CMAKE_CURRENT_SOURCE_DIR}/build")
+endif()
+
 # Go app
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/build/goTorch
+    COMMAND ${CMAKE_COMMAND} -E env
+       CGO_CPPFLAGS=-I${CMAKE_CURRENT_SOURCE_DIR}/c++
+       CGO_LDFLAGS=-L${CMAKE_CURRENT_SOURCE_DIR}/build\ -ltorch_bind\ ${RPATH_FLAG}
+       -- go build -o ${CMAKE_CURRENT_SOURCE_DIR}/build/goTorch
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/go
+    DEPENDS torch_bind mnist
+    COMMENT "Building Go app with libtorch C++ bindings"
+)
+       # -- python3 -c 'import os\; print(os.environ.get(\"CGO_CXXFLAGS\")+\";\"+os.environ.get(\"CGO_LDFLAGS\"))'
+
+add_custom_target(buildGo ALL
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/build/goTorch
+)
+
+
 #set(GO_SOURCES main.go)
 #set(GO_LDFLAGS -L${LIBRARY_OUTPUT_DIRECTORY})
 

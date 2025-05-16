@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <exception>
 #include <filesystem>
@@ -10,6 +11,7 @@
 #include "torch_bind.h"
 #include "torch.h"
 
+/*
 torch::ScalarType dtype(std::string_view type_str) {
     if        (type_str == "u8") {
         return torch::kUInt8 ;
@@ -37,30 +39,15 @@ torch::ScalarType dtype(std::string_view type_str) {
         throw std::runtime_error(std::format("Invalid type: {}", type_str));
     }
 }
+*/
 
-class tensor {
-public:
-    tensor(void* blob, at::IntArrayRef sizes, torch::TensorOptions& options) : tensor_{torch::from_blob(blob, sizes, options).to(device_manager::device())} {}
-    tensor(tensor const&) = delete;
-    tensor() = delete;
-
-    operator torch::Tensor& () {
-        return tensor_ ;
-    }
-
-    operator torch::Tensor const& () const {
-        return tensor_ ;
-    }
-
-private:
-    torch::Tensor tensor_ ;
-};
-
+/*
 extern "C" int GetTypeId(char const* type_str) {
     return static_cast<int>(dtype(type_str));
 }
+*/
 
-extern "C" basic_model* NewModel(char const* model, char const* options) {
+extern "C" Model* NewModel(char const* model, char const* options) {
     try {
         return model_factory::newModel(model, std::string_view{options});
     } catch (const std::exception& e) {
@@ -69,36 +56,77 @@ extern "C" basic_model* NewModel(char const* model, char const* options) {
     }
 }
 
-extern "C" void FreeModel(struct basic_model* model) {
+extern "C" void FreeModel(struct Model* model) {
     delete model;
 }
 
-extern "C" struct tensor* NewTensorFromBlob(uint8_t* blob, int64_t size, int64_t* shape, int64_t dims, int dtype) {
+struct Tensor* NewTensorFromBlob(void* blob, size_t size, size_t* shape, size_t dims, torch::ScalarType dtype) {
     try {
 	std::vector<at::IntArrayRef::value_type> tensor_shape = {static_cast<at::IntArrayRef::value_type>(size)};
 	tensor_shape.insert(tensor_shape.end(), shape, shape + dims);
-        auto options = torch::TensorOptions().dtype(static_cast<torch::ScalarType>(dtype));
+        auto options = torch::TensorOptions().dtype(dtype);
 
-        return new tensor(blob, tensor_shape, options);
+        return new Tensor(blob, tensor_shape, options);
     } catch (const std::exception& e) {
 	std::cerr << "Exception - " << e.what() << std::endl ;
     }
     return nullptr ;
 }
 
-extern "C" void FreeTensor(struct tensor* tensor) {
+#define NEW_TENSOR_FN(dtype) \
+extern "C" struct Tensor* NewTensor##dtype(void* blob, size_t size, size_t* shape, size_t dims) { \
+    return NewTensorFromBlob(blob, size, shape, dims, torch::k##dtype); \
+}
+
+NEW_TENSOR_FN(Int8)
+NEW_TENSOR_FN(Int16)
+NEW_TENSOR_FN(Int32)
+NEW_TENSOR_FN(Int64)
+NEW_TENSOR_FN(UInt8)
+NEW_TENSOR_FN(UInt16)
+NEW_TENSOR_FN(UInt32)
+NEW_TENSOR_FN(UInt64)
+NEW_TENSOR_FN(Float32)
+NEW_TENSOR_FN(Float64)
+#undef NEW_TENSOR_FN
+
+extern "C" void FreeTensor(struct Tensor* tensor) {
     delete tensor ;
 }
 
-extern "C" size_t Infer(struct basic_model* model, struct tensor const* data, void* result_buffer, size_t buffer_size) {
+extern "C" struct Tensor* Infer(struct Model* model, struct Tensor* data, void* result_buffer, size_t buffer_size) {
     try {
         c10::InferenceMode guard;
 
+        data->to(device_manager::device());
+
         model->eval();
 
-        auto output = model->forward(*data);
+        return new Tensor{model->forward(*data)};
 
-        auto output_flat = output.view({-1});
+    } catch (const std::exception& e) {
+	std::cerr << "Exception - " << e.what() << std::endl ;
+	return 0;
+    }
+}
+
+extern "C" size_t Flatten(struct Tensor* tensor, void* result_buffer, size_t buffer_size, size_t* shape, size_t maxDim) {
+    try {
+        tensor->to(torch::kCPU);
+
+        if (shape && maxDim > 0) {
+            if (tensor->tensor().dim() >= maxDim) {
+                throw std::runtime_error(std::format("Insufficient dimensions {} given, want {}", maxDim, tensor->tensor().dim()));
+            }
+
+            std::fill(shape, shape + maxDim, size_t{0});
+
+            for(auto i = 0; i < tensor->tensor().dim(); ++i) {
+                shape[i] = tensor->tensor().size(i);
+            }
+        }
+
+        auto output_flat = tensor->tensor().view({-1});
 
         size_t result_size = output_flat.size(0);
 
@@ -106,20 +134,22 @@ extern "C" size_t Infer(struct basic_model* model, struct tensor const* data, vo
             auto output_cpu = output_flat.to(torch::kCPU);
             std::memcpy(result_buffer, output_cpu.data_ptr<float>(), result_size * sizeof(float));
         } else {
-	    std::cerr << "Insufficient buffer size " << buffer_size << ", " << result_size << " is needed" << std::endl ;
+            throw std::runtime_error(std::format("Insufficient buffer size {} given, want {}", buffer_size, result_size));
             return 0;
         }
-
-        return result_size;
     } catch (const std::exception& e) {
 	std::cerr << "Exception - " << e.what() << std::endl ;
 	return 0;
     }
+
+    return tensor->tensor().dim();
 }
 
-
-extern "C" void Train(struct basic_model* model, struct tensor const* data, struct tensor const* target, int epochs) {
+extern "C" void Train(struct Model* model, struct Tensor* data, struct Tensor* target, int epochs) {
     try {
+        data->to(device_manager::device());
+        target->to(device_manager::device());
+
         model->train();
 
         for (size_t epoch = 0; epoch < epochs; ++epoch) {

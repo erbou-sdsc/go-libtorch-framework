@@ -1,6 +1,6 @@
 #include "../torch.h"
 
-class Mnist : public basic_model {
+class Mnist : public Model {
 public:
     Mnist() {
         conv1 = register_module("conv1", torch::nn::Conv2d(torch::nn::Conv2dOptions(1, 32, 5).stride(1).padding(2)));
@@ -57,6 +57,7 @@ private:
 };
 
 extern "C" void RegisterModels() {
+    std::cerr << "Register models mnist" << std::endl;
     model_factory::registerModel("mnist", [](std::string_view) {
         return new Mnist();
     });

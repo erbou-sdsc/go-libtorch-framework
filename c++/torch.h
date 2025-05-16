@@ -10,17 +10,48 @@ public:
     static torch::Device device();
 
 private:
-    device_manager();
+    device_manager() = default;
+    void init();
     torch::Device device_{torch::kCPU};
+    std::once_flag once_;
     static device_manager& instance();
-    static std::mutex& mutex();
 };
 
-struct basic_model : torch::nn::Module {
+class Tensor {
+public:
+    Tensor(void* blob, at::IntArrayRef sizes, torch::TensorOptions& options) : tensor_{torch::from_blob(blob, sizes, options)} {}
+    Tensor(torch::Tensor&& tensor) : tensor_{tensor} {}
+    Tensor(Tensor const&) = delete;
+    Tensor() = delete;
+
+    operator torch::Tensor& () {
+        return tensor_ ;
+    }
+
+    operator torch::Tensor const& () const {
+        return tensor_ ;
+    }
+
+    void to(torch::Device const& device) {
+        if (tensor_.device() != device) {
+            tensor_.to(device);
+        }
+    }
+
+    torch::Tensor const& tensor() const {
+        return tensor_ ;
+    }
+
+private:
+    torch::Tensor tensor_ ;
+};
+
+
+struct Model : torch::nn::Module {
     using shape_t = at::IntArrayRef ;
 
-    basic_model() : device{device_manager::device()} {}
-    virtual ~basic_model() = default ;
+    Model() : device{device_manager::device()} {}
+    virtual ~Model() = default ;
 
     virtual torch::Tensor forward(torch::Tensor const x) = 0 ;
     virtual const shape_t ishape() const = 0 ;
@@ -42,18 +73,22 @@ struct basic_model : torch::nn::Module {
 
 class model_factory {
 public:
-    using model_constructor = std::function<basic_model*(std::string_view)>;
+    using model_constructor = std::function<Model*(std::string_view)>;
 
     static void registerModel(std::string&& name, model_constructor cnstr);
-    static basic_model* newModel(const std::string& model, std::string_view opt = {});
-    void load_model_plugins(const std::string_view& directory);
+    static Model* newModel(const std::string& model, std::string_view opt = {});
 
 private:
-    model_factory();
+    model_factory() = default;
     ~model_factory();
 
+
     static model_factory& instance();
-    static std::mutex& mutex();
+    void load_model_plugins(const std::string_view& directory);
+    void init();
+
+    std::mutex mtx_;
+    std::once_flag once_;
 
     std::unordered_map<std::string, model_constructor> registry_;
     std::vector<void*> plugin_handles;

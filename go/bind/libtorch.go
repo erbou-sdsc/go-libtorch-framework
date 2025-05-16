@@ -1,4 +1,4 @@
-package main
+package bind
 
 //! See conditions for noescape and nocallback optimization
 

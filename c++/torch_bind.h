@@ -4,16 +4,25 @@
 extern "C" {
 #endif
 
-struct               basic_model;
-struct               tensor;
+struct               Model;
+struct               Tensor;
 
-int                  GetTypeId(char const* type);
-struct basic_model*  NewModel(char const* model, char const* options);
-void                 FreeModel(struct basic_model* model);
-struct tensor*       NewTensorFromBlob(uint8_t* data, int64_t size, int64_t* shape, int64_t dims, int dtype);
-void                 FreeTensor(struct tensor* tensor);
-void                 Train(struct basic_model* model, struct tensor const* data, struct tensor const* target, int epochs);
-size_t               Infer(struct basic_model* model, struct tensor const* data, void* result_buffer, size_t buffer_size);
+//int                  GetTypeId(char const* type);
+struct Model*        NewModel(char const* model, char const* options);
+void                 FreeModel(struct Model* model);
+struct Tensor*       NewTensorInt8(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorInt16(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorInt32(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorInt64(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorUInt8(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorUInt16(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorUInt32(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorUInt64(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorFloat32(void* data, size_t size, size_t* shape, size_t dims);
+struct Tensor*       NewTensorFloat64(void* data, size_t size, size_t* shape, size_t dims);
+void                 FreeTensor(struct Tensor* tensor);
+void                 Train(struct Model* model, struct Tensor* data, struct Tensor* target, int epochs);
+struct Tensor*       Infer(struct Model* model, struct Tensor* data, void* result_buffer, size_t buffer_size);
 
 #ifdef __cplusplus
 }

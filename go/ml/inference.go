@@ -1,22 +1,13 @@
-package main
-
-//! See conditions for noescape and nocallback optimization
+package ml
 
 /*
-#cgo LDFLAGS: -L. -ltest_cnn
+#cgo CXXFLAGS: -std=c++20
 #include <stdlib.h>
-#include "test_cnn.h"
-#cgo noescape torch_training
-#cgo noescape torch_inference
-#cgo noescape torch_model_output_size
-#cgo noescape torch_model_input_size
-#cgo nocallback torch_training
-#cgo nocallback torch_inference
-#cgo nocallback torch_model_output_size
-#cgo nocallback torch_model_input_size
+#include "torch_bind.h"
 */
 import "C"
 
+/*
 import (
     "unsafe"
 
@@ -27,48 +18,25 @@ import (
     "strconv"
     "time"
 )
+*/
 
-// Go Bindings to C functions in test_cnn.cpp
-// {
-func InitializeModelWithOpts (model string, options string) *C.struct_CNN {
-    cModel := C.CString(model)
-    cOpts := C.CString(options)
-    defer C.free(unsafe.Pointer(cModel))
-    defer C.free(unsafe.Pointer(cOpts))
-    return C.torch_initialize_model(cModel, cOpts)
-}
-
-func InitializeModel(model string) *C.struct_CNN {
-    return InitializeModelWithOpts(model, "")
-}
-
-func DeleteModel(model *C.struct_CNN) {
-    C.torch_delete_model(model)
-}
-
-func TrainModel(model *C.struct_CNN, data []float32, target []int, num_epochs int) {
+/*
+func TrainModel(model Model, data []float32, target []int, num_epochs int) {
     cData := (*C.float)(unsafe.Pointer(&data[0]))
     cTarget := (*C.int)(unsafe.Pointer(&target[0]))
     cSize := (C.size_t)(len(data))
     cEpochs := (C.int)(num_epochs)
     C.torch_training(model, cData, cTarget, cSize, cEpochs)
 }
-
-func InferenceModel(model *C.struct_CNN, data []float32, result []float32) int {
-    cData := (*C.float)(unsafe.Pointer(&data[0]))
-    cSize := (C.size_t)(len(data))
-    cResult := (*C.float)(unsafe.Pointer(&result[0]))
-    cMaxSize := (C.size_t)(len(result))
-    return int(C.torch_inference(model, cData, cSize, cResult, cMaxSize))
-}
-// }
+*/
 
 type InferenceInput struct {
     Data []float32
     Callback chan<- []float32
 }
 
-func InferenceAggregator(model *C.struct_CNN, aggregatorChannel <-chan InferenceInput, batchSize int, timeoutMs time.Duration) {
+/*
+func InferenceAggregator(model Model, aggregatorChannel <-chan InferenceInput, batchSize int, timeoutMs time.Duration) {
     outputSize   := int(C.torch_model_output_size(model))
     inputSize    := int(C.torch_model_input_size(model))
     batchData    := make([]float32, 0, batchSize * inputSize)
@@ -200,3 +168,4 @@ func main() {
     wg.Wait()
     fmt.Println(`$`)
 }
+*/
