@@ -54,6 +54,8 @@ elseif(UNIX)
     set(RPATH_FLAG "-Wl,-rpath=${CMAKE_CURRENT_SOURCE_DIR}/build")
 endif()
 
+file(GLOB_RECURSE GO_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/go/*.go")
+
 # Go app
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/build/goTorch
@@ -62,7 +64,7 @@ add_custom_command(
        CGO_LDFLAGS=-L${CMAKE_CURRENT_SOURCE_DIR}/build\ -ltorch_bind\ ${RPATH_FLAG}
        -- go build -o ${CMAKE_CURRENT_SOURCE_DIR}/build/goTorch
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/go
-    DEPENDS torch_bind mnist
+    DEPENDS torch_bind mnist ${GO_SOURCES}
     COMMENT "Building Go app with libtorch C++ bindings"
 )
        # -- python3 -c 'import os\; print(os.environ.get(\"CGO_CXXFLAGS\")+\";\"+os.environ.get(\"CGO_LDFLAGS\"))'
@@ -72,14 +74,3 @@ add_custom_target(buildGo ALL
 )
 
 
-#set(GO_SOURCES main.go)
-#set(GO_LDFLAGS -L${LIBRARY_OUTPUT_DIRECTORY})
-
-#add_custom_target(
-    #main ALL
-    #COMMAND go build -o main ${GO_SOURCES}
-    #WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-#)
-#
-#add_dependencies(main test_cnn)
-#add_dependencies(torch_bind)
