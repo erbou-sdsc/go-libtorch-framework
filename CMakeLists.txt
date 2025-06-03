@@ -33,20 +33,6 @@ target_link_libraries(torch_bind
     pthread
 )
 
-# Models
-add_library(mnist SHARED ../c++/models/mnist.cpp)
-set_target_properties(mnist PROPERTIES OUTPUT_NAME "mnist")
-set_target_properties(mnist PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/models)
-set_target_properties(mnist PROPERTIES SUFFIX ".so")
-
-target_link_libraries(mnist
-    torch_bind
-    torch
-    c10
-    ${CUDA_LIBRARIES}
-    pthread
-)
-
 # Determine platform-specific shared lib name and rpath flag
 if(APPLE)
     set(RPATH_FLAG "-Wl,-rpath,${CMAKE_CURRENT_SOURCE_DIR}/build")
@@ -64,13 +50,26 @@ add_custom_command(
        CGO_LDFLAGS=-L${CMAKE_CURRENT_SOURCE_DIR}/build\ -ltorch_bind\ ${RPATH_FLAG}
        -- go build -o ${CMAKE_CURRENT_SOURCE_DIR}/build/goTorch
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/go
-    DEPENDS torch_bind mnist ${GO_SOURCES}
+    DEPENDS torch_bind ${GO_SOURCES}
     COMMENT "Building Go app with libtorch C++ bindings"
 )
-       # -- python3 -c 'import os\; print(os.environ.get(\"CGO_CXXFLAGS\")+\";\"+os.environ.get(\"CGO_LDFLAGS\"))'
 
 add_custom_target(buildGo ALL
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/build/goTorch
 )
 
-
+# Compile all models dynamic libraries from c++/models/*.cpp
+add_custom_target(allModels ALL)
+file(GLOB MODEL_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/c++/models/*.cpp")
+foreach(SRC ${MODEL_SOURCES})
+    get_filename_component(MODEL_NAME ${SRC} NAME_WE)
+    set(OUTPUT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/models")
+    add_library(${MODEL_NAME} SHARED ${SRC})
+    set_target_properties(${MODEL_NAME} PROPERTIES
+        OUTPUT_NAME ${MODEL_NAME}
+        LIBRARY_OUTPUT_DIRECTORY ${OUTPUT_DIR}
+        SUFFIX ".so"
+    )
+    target_link_libraries(${MODEL_NAME} torch_bind)
+    add_dependencies(allModels ${MODEL_NAME})
+endforeach()
