@@ -69,8 +69,12 @@ model_factory::~model_factory() {
 
 void model_factory::load_model_plugins(const std::string_view& directory) {
     std::lock_guard<std::mutex> lock(mtx_);
-    const char* model_path = std::getenv("LIBTORCH_MODEL_PATH");
-    if (!model_path) {
+    std::string model_path;
+    if (!directory.empty()) {
+        model_path = std::string(directory) ;
+    } else if (const char* env_path = std::getenv("LIBTORCH_MODEL_PATH")) {
+        model_path = env_path ;
+    } else {
         model_path = "./models";
     }
     for (const auto& entry : std::filesystem::directory_iterator(model_path)) {
@@ -81,15 +85,15 @@ void model_factory::load_model_plugins(const std::string_view& directory) {
                 continue;
             }
 
-            using RegisterFunc = void(*)();
-            RegisterFunc register_models = reinterpret_cast<RegisterFunc>(dlsym(handle, "RegisterModels"));
+            using RegisterFunc = void(*)(model_factory&);
+            auto register_models = reinterpret_cast<RegisterFunc>(dlsym(handle, "RegisterModels"));
             if (!register_models) {
                 std::cerr << "RegisterModels not found in " << entry.path() << std::endl;
                 dlclose(handle);
                 continue;
             }
 
-            register_models();
+            register_models(*this);
 
             plugin_handles.push_back(handle);
         }

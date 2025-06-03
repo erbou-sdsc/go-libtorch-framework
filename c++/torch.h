@@ -58,12 +58,14 @@ struct Model {
     virtual torch::Tensor forward(torch::Tensor const x) = 0 ;
     virtual std::shared_ptr<torch::optim::Optimizer> optimizer() = 0 ;
     virtual torch::nn::Module& module() = 0 ;
+    virtual void load_weights(const std::vector<char>& buffer) = 0 ;
+    virtual torch::Tensor prepare_targets(torch::Tensor const& output, std::vector<torch::Tensor const*> targets) = 0 ;
 
     torch::nn::Module const& module() const {
         return module();
     }
 
-    operator torch::nn::Module () {
+    operator torch::nn::Module& () {
         return module();
     }
 
@@ -71,12 +73,7 @@ struct Model {
         return module();
     }
 
-    void set_target(const std::string_view id, const torch::Tensor& tensor) {
-        targets_[std::string(id)] = tensor ;
-    }
-
     torch::Device const device;
-    std::unordered_map<std::string, torch::Tensor> targets_;
 };
 
 class model_factory {

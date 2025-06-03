@@ -24,12 +24,19 @@ public:
         return torch::log_softmax(t, 1);
     }
 
+    torch::Tensor prepare_targets(torch::Tensor const& output, std::vector<torch::Tensor const*> targets) override {
+        return torch::nll_loss(output, *targets[0]);
+    }
+
     std::shared_ptr<torch::optim::Optimizer> optimizer() override {
         return _optimizer ;
     }
 
     torch::nn::Module& module () override {
         return _module ;
+    }
+
+    void load_weights(const std::vector<char>& buffer) override {
     }
 
 private:
@@ -41,9 +48,9 @@ private:
     std::shared_ptr<torch::optim::Optimizer> _optimizer;
 };
 
-extern "C" void RegisterModels() {
+extern "C" void RegisterModels(model_factory& factory) {
     // std::cout << "Register models mnist" << std::endl;
-    model_factory::registerModel("mnist", [](std::string_view opts) {
+    factory.registerModel("mnist", [](std::string_view opts) -> Model* {
         return new Mnist(opts);
     });
 }

@@ -21,8 +21,7 @@ struct Tensor*       NewTensorUInt64(void* data, size_t size, size_t* shape, siz
 struct Tensor*       NewTensorFloat32(void* data, size_t size, size_t* shape, size_t dims);
 struct Tensor*       NewTensorFloat64(void* data, size_t size, size_t* shape, size_t dims);
 void                 FreeTensor(struct Tensor* tensor);
-void                 SetTrainTarget(struct Model* model, char const* targetName, struct Tensor* data);
-void                 Train(struct Model* model, struct Tensor* data, struct Tensor* target, int epochs);
+void                 Train(struct Model* model, struct Tensor* data, struct Tensor const** target, int num_targets, int epochs);
 struct Tensor*       Infer(struct Model* model, struct Tensor* data);
 
 #ifdef __cplusplus

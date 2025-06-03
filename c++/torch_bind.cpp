@@ -150,37 +150,26 @@ extern "C" struct Tensor* Infer(struct Model* model, struct Tensor* data) {
     }
 }
 
-// TODO:
-// This is not generic, a different Train method must be created for each number of targets, and loss function.
-// An alternative would be to set targets individually, e.g. policies and rewards, and use a model specific loss method in Train.
-// E.g. SetTrainTarget(Model* model, std::string& targetId, Tensor*);
-//      Train(Model* model, Tensor* data, int epochs) {
-//        ...
-//        output = model->forward(*data);
-//        auto loss = model->compute_loss(output)
-//        loss.backward()
-//        ...
-//      }
-//
-extern "C" void SetTrainTarget(struct Model* model, char const* targetName, struct Tensor* data) {
-}
-
-extern "C" void Train(struct Model* model, struct Tensor* data, struct Tensor* target, int epochs) {
-    if (model == nullptr || data == nullptr || target == nullptr || epochs == 0) {
+extern "C" void Train(struct Model* model, struct Tensor* data, struct Tensor const** targets, int num_targets, int epochs) {
+    if (model == nullptr || data == nullptr || targets == nullptr || epochs == 0) {
         return ;
     }
 
     try {
         data->to(device_manager::device());
-        target->to(device_manager::device());
+        std::vector<torch::Tensor const*> vtargets ;
+        for (int i = 0; i < num_targets; ++i) {
+            targets[i]->tensor().to(device_manager::device());
+            vtargets.push_back(&targets[i]->tensor());
+        }
         model->module().train();
 
         for (size_t epoch = 0; epoch < epochs; ++epoch) {
             model->optimizer()->zero_grad();
             auto output = model->forward(*data);
 
-            auto loss = torch::nll_loss(output, *target);
-    
+            auto loss = model->prepare_targets(output, vtargets);
+
             loss.backward();
             model->optimizer()->step();
     
