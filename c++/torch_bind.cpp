@@ -11,41 +11,75 @@
 #include "torch_bind.h"
 #include "torch.h"
 
-/*
-torch::ScalarType dtype(std::string_view type_str) {
-    if        (type_str == "u8") {
-        return torch::kUInt8 ;
-    } else if (type_str == "i8") {
-        return torch::kInt8 ;
-    } else if (type_str == "u16") {
-        return torch::kUInt16 ;
-    } else if (type_str == "i16") {
-        return torch::kInt16 ;
-    } else if (type_str == "u32") {
-        return torch::kUInt32 ;
-    } else if (type_str == "i32") {
-        return torch::kInt32 ;
-    } else if (type_str == "u64") {
-        return torch::kUInt64 ;
-    } else if (type_str == "i64") {
-        return torch::kInt64 ;
-    } else if (type_str == "f16") {
-        return torch::kFloat16 ;
-    } else if (type_str == "f32") {
-        return torch::kFloat32 ;
-    } else if (type_str == "f64") {
-        return torch::kFloat64 ;
-    } else {
-        throw std::runtime_error(std::format("Invalid type: {}", type_str));
+torch::ScalarType str2dtype(std::string_view type_str) {
+   if (type_str.size() >= 2) {
+        switch(type_str[0]) {
+            case 'f':
+                switch(type_str[1]) {
+                    case '1':
+                        return torch::kFloat16;
+                    case '3':
+                        return torch::kFloat32;
+                    case '6':
+                        return torch::kFloat64;
+                    default: break ;
+                }
+                break;
+            case 'i':
+                switch(type_str[1]) {
+                    case '1':
+                        return torch::kInt16;
+                    case '3':
+                        return torch::kInt32;
+                    case '6':
+                        return torch::kInt64;
+                    default: break ;
+                }
+                break;
+            case 'u':
+                switch(type_str[1]) {
+                    case '1':
+                        return torch::kUInt16;
+                    case '3':
+                        return torch::kUInt32;
+                    case '6':
+                        return torch::kUInt64;
+                    default: break ;
+                }
+                break;
+        }
+    }
+    throw std::runtime_error(std::format("Invalid type: {}", type_str));
+}
+
+char const* dtype2str(torch::ScalarType dtype) {
+    switch(dtype) {
+        case torch::kFloat16:
+            return "f16";
+        case torch::kFloat32:
+            return "f32";
+        case torch::kFloat64:
+            return "f64";
+        case torch::kInt16:
+            return "i16";
+        case torch::kInt32:
+            return "i32";
+        case torch::kInt64:
+            return "i64";
+        case torch::kUInt16:
+            return "u16";
+        case torch::kUInt32:
+            return "u32";
+        case torch::kUInt64:
+            return "u64";
+        default:
+            throw std::runtime_error(std::format("Invalid type: {}", static_cast<int>(dtype)));
     }
 }
-*/
 
-/*
 extern "C" int GetTypeId(char const* type_str) {
-    return static_cast<int>(dtype(type_str));
+    return static_cast<int>(str2dtype(type_str));
 }
-*/
 
 extern "C" Model* NewModel(char const* model, char const* options) {
     try {
@@ -90,6 +124,13 @@ NEW_TENSOR_FN(Float32)
 NEW_TENSOR_FN(Float64)
 #undef NEW_TENSOR_FN
 
+extern "C" size_t Dim(struct Tensor const* tensor) {
+    return tensor ? static_cast<size_t>(tensor->tensor().dim()): 0 ;
+}
+
+extern "C" int64_t const* Shape(struct Tensor const* tensor) {
+    return tensor ? tensor->tensor().sizes().data(): nullptr ;
+}
 
 extern "C" void FreeTensor(struct Tensor* tensor) {
     delete tensor ;
@@ -123,8 +164,8 @@ extern "C" size_t Flatten(struct Tensor* tensor, void* result_buffer, size_t buf
             return 0;
         }
     } catch (const std::exception& e) {
-	std::cerr << "Exception - " << e.what() << std::endl ;
-	return 0;
+	    std::cerr << "Exception - " << e.what() << std::endl ;
+	    return 0;
     }
 
     return tensor->tensor().dim();

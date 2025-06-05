@@ -18,15 +18,23 @@ package ml
 #cgo noescape   NewTensorUInt64
 #cgo noescape   NewTensorFloat32
 #cgo noescape   NewTensorFloat64
+#cgo noescape   Shape
+#cgo noescape   Dim
 #cgo noescape   FreeTensor
 #cgo nocallback NewModel
 #cgo nocallback FreeModel
+#cgo nocallback NewTensorInt8
+#cgo nocallback NewTensorInt16
+#cgo nocallback NewTensorInt32
+#cgo nocallback NewTensorInt64
 #cgo nocallback NewTensorUInt8
 #cgo nocallback NewTensorUInt16
 #cgo nocallback NewTensorUInt32
 #cgo nocallback NewTensorUInt64
 #cgo nocallback NewTensorFloat32
 #cgo nocallback NewTensorFloat64
+#cgo nocallback Shape
+#cgo nocallback Dim
 #cgo nocallback FreeTensor
 */
 import "C"
@@ -83,7 +91,7 @@ func CreateModel(model string) Model {
 
 // Delete releases native resources associated with the Model.
 // Useful for freeing memory explicitly before garbage collection.
-func (o *Model) Delete() {
+func (o Model) Delete() {
 	o.once.Do(func() {
 		if o.p != nil {
 			C.FreeModel(o.p)
@@ -93,16 +101,16 @@ func (o *Model) Delete() {
 }
 
 // IsValid reports whether the model is properly initialized and usable.
-func (o *Model) IsValid() bool {
+func (o Model) IsValid() bool {
 	return o.p != nil
 }
 
-func (o *Model) Infer(data Tensor) Tensor {
+func (o Model) Infer(data Tensor) Tensor {
 	return Tensor{p: C.Infer(o.p, data.p)}
 }
 
-func (o *Model) Train(data Tensor, targets []*Tensor, epochs int) {
-	trainModel(*o, data, targets, epochs)
+func (o Model) Train(data Tensor, targets []*Tensor, epochs int) {
+	trainModel(o, data, targets, epochs)
 }
 
 // CreateTensor creates a new Tensor from a flattened data slice and shape.
@@ -149,6 +157,33 @@ func CreateTensor[T any](flattened Flattened[T]) Tensor {
 	})
 
 	return o
+}
+
+func (t Tensor) Dim() int {
+	return int(C.Dim((*C.struct_Tensor)(t.p)))
+}
+
+func (t Tensor) Shape() []int {
+	ndim := t.Dim()
+	ptr := C.Shape((*C.struct_Tensor)(t.p))
+	if ptr == nil || ndim <= 0 {
+		return nil
+	}
+
+	// Create Go slice that views the C array temporarily
+	shapeView := unsafe.Slice((*int64)(unsafe.Pointer(ptr)), int(ndim))
+
+	// Copy to Go-managed slice
+	shape := make([]int, int(ndim))
+	for i, v := range shapeView {
+		shape[i] = int(v)
+	}
+
+	return shape
+}
+
+func Unflatten[T any](t Tensor) (any, error) {
+	return nil, nil
 }
 
 // Flatten takes an arbitrarily nested array (of arrays) of generic type T

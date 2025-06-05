@@ -20,6 +20,8 @@ struct Tensor*       NewTensorUInt32(void* data, size_t size, size_t* shape, siz
 struct Tensor*       NewTensorUInt64(void* data, size_t size, size_t* shape, size_t dims);
 struct Tensor*       NewTensorFloat32(void* data, size_t size, size_t* shape, size_t dims);
 struct Tensor*       NewTensorFloat64(void* data, size_t size, size_t* shape, size_t dims);
+size_t               Dim(struct Tensor const* tensor);
+int64_t const*       Shape(struct Tensor const* tensor);
 void                 FreeTensor(struct Tensor* tensor);
 void                 Train(struct Model* model, struct Tensor* data, struct Tensor const** target, int num_targets, int epochs);
 struct Tensor*       Infer(struct Model* model, struct Tensor* data);
