@@ -34,9 +34,7 @@ public:
     }
 
     void to(torch::Device const& device) {
-        if (tensor_.device() != device) {
-            tensor_.to(device);
-        }
+        tensor_ = tensor_.to(device);
     }
 
     torch::Tensor const& tensor() const {
