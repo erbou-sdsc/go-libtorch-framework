@@ -7,67 +7,73 @@ package ml
 */
 import "C"
 
-/*
 import (
-    "unsafe"
-
-    "os"
-    "fmt"
-    "math/rand"
-    "sync"
-    "strconv"
-    "time"
+	//"unsafe"
+	//"os"
+	"fmt"
+	//"math/rand"
+	//"sync"
+	//"strconv"
+	"time"
 )
-*/
+
+type InferenceInput[T any, K any] struct {
+	Data     []T
+	Callback chan<- []K
+}
+
+func InferenceAggregator[T any, K any](model Model, aggregatorChannel <-chan InferenceInput[T, K], batchSize int, timeoutMs time.Duration) {
+	batchData := make([]T, 0, batchSize)
+	batchChan := make([]chan<- []K, 0, batchSize)
+
+	for true {
+		timeout := false
+		select {
+		case request := <-aggregatorChannel:
+			batchData = append(batchData, request.Data...)
+			batchChan = append(batchChan, request.Callback)
+		case <-time.After(timeoutMs * time.Millisecond):
+			timeout = true
+			fmt.Printf(`O`)
+		}
+		if (len(batchChan) >= batchSize || timeout) && len(batchData) > 0 {
+			fmt.Printf(`*`)
+			var result Tensor
+			if flattened, err := Flatten[T](batchData); err == nil {
+				tensor := CreateTensor(flattened)
+				if tensor.IsValid() {
+					result = model.Infer(tensor)
+				}
+				tensor.Delete()
+			}
+			if result.IsValid() {
+				fmt.Printf(`+`)
+				nShape := result.Shape()
+				if nShape[0] == len(batchChan) {
+					// TODO split result batch into individual results
+				}
+				for i, callback := range batchChan {
+					if i > 0 {
+					}
+					// TODO
+					//callback <- result
+					callback <- nil
+				}
+			} else {
+				// No result returned, or there was an error.
+				// Returns nil to immediately notify the agent so that they stop waiting for the result.
+				fmt.Print(`!`)
+				for _, callback := range batchChan {
+					callback <- nil
+				}
+			}
+			batchData = batchData[:0]
+			batchChan = batchChan[:0]
+		}
+	}
+}
 
 /*
-func TrainModel(model Model, data []float32, target []int, num_epochs int) {
-    cData := (*C.float)(unsafe.Pointer(&data[0]))
-    cTarget := (*C.int)(unsafe.Pointer(&target[0]))
-    cSize := (C.size_t)(len(data))
-    cEpochs := (C.int)(num_epochs)
-    C.torch_training(model, cData, cTarget, cSize, cEpochs)
-}
-*/
-
-type InferenceInput struct {
-    Data []float32
-    Callback chan<- []float32
-}
-
-/*
-func InferenceAggregator(model Model, aggregatorChannel <-chan InferenceInput, batchSize int, timeoutMs time.Duration) {
-    outputSize   := int(C.torch_model_output_size(model))
-    inputSize    := int(C.torch_model_input_size(model))
-    batchData    := make([]float32, 0, batchSize * inputSize)
-    batchChan    := make([]chan<- []float32, 0, batchSize)
-    resultBuffer := make([]float32, batchSize * outputSize)
-
-    for true {
-        timeout := false
-        select {
-            case request := <- aggregatorChannel:
-                batchData = append(batchData, request.Data...)
-                batchChan = append(batchChan, request.Callback)
-            case <-time.After(timeoutMs * time.Millisecond):
-	        timeout = true
-                fmt.Printf(`O`)
-        }
-        if (len(batchChan) >= batchSize || timeout) && len(batchData) > 0 {
-            fmt.Printf(`*`)
-            resultSize := InferenceModel(model, batchData, resultBuffer)
-            fmt.Printf(`+`)
-            if resultSize > 0 {
-                for i, callback := range batchChan {
-                    callback <- resultBuffer[i*outputSize : (i+1)*outputSize]
-                }
-            }
-            batchData = batchData[:0]
-            batchChan = batchChan[:0]
-        }
-    }
-}
-
 func simGenerateRandomData(id int, aggregatorChannel chan<- InferenceInput, numRequests int, dataSize int, wg *sync.WaitGroup) {
     callback := make(chan []float32, 1)
     defer close(callback)
