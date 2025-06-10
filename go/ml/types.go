@@ -20,6 +20,11 @@ package ml
 #cgo noescape   NewTensorFloat64
 #cgo noescape   Shape
 #cgo noescape   Dim
+#cgo noescape   NumBytes
+#cgo noescape   DType
+#cgo noescape   NumElem
+#cgo noescape   ElemSize
+#cgo noescape   Bytes
 #cgo noescape   FreeTensor
 #cgo nocallback NewModel
 #cgo nocallback FreeModel
@@ -35,11 +40,18 @@ package ml
 #cgo nocallback NewTensorFloat64
 #cgo nocallback Shape
 #cgo nocallback Dim
+#cgo nocallback NumBytes
+#cgo nocallback DType
+#cgo nocallback NumElem
+#cgo nocallback ElemSize
+#cgo nocallback Bytes
 #cgo nocallback FreeTensor
 */
 import "C"
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"reflect"
 	"runtime"
@@ -123,31 +135,30 @@ func CreateTensor[T any](flattened Flattened[T]) Tensor {
 	}
 
 	cData := unsafe.Pointer(&flattened.Data[0])
-	cSize := (C.size_t)(len(flattened.Data))
 	cShape := (*C.size_t)(unsafe.Pointer(&flattened.Shape[0]))
 	cDim := (C.size_t)(len(flattened.Shape))
 
 	switch any(flattened.Data).(type) {
 	case []uint8:
-		o = Tensor{p: C.NewTensorUInt8(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorUInt8(cData, cShape, cDim)}
 	case []uint16:
-		o = Tensor{p: C.NewTensorUInt16(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorUInt16(cData, cShape, cDim)}
 	case []uint32:
-		o = Tensor{p: C.NewTensorUInt32(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorUInt32(cData, cShape, cDim)}
 	case []uint64:
-		o = Tensor{p: C.NewTensorUInt64(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorUInt64(cData, cShape, cDim)}
 	case []int8:
-		o = Tensor{p: C.NewTensorInt8(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorInt8(cData, cShape, cDim)}
 	case []int16:
-		o = Tensor{p: C.NewTensorInt16(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorInt16(cData, cShape, cDim)}
 	case []int32:
-		o = Tensor{p: C.NewTensorInt32(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorInt32(cData, cShape, cDim)}
 	case []int64:
-		o = Tensor{p: C.NewTensorInt64(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorInt64(cData, cShape, cDim)}
 	case []float32:
-		o = Tensor{p: C.NewTensorFloat32(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorFloat32(cData, cShape, cDim)}
 	case []float64:
-		o = Tensor{p: C.NewTensorFloat64(cData, cSize, cShape, cDim)}
+		o = Tensor{p: C.NewTensorFloat64(cData, cShape, cDim)}
 	default:
 		return Tensor{p: nil}
 	}
@@ -161,6 +172,10 @@ func CreateTensor[T any](flattened Flattened[T]) Tensor {
 
 func (t Tensor) Dim() int {
 	return int(C.Dim((*C.struct_Tensor)(t.p)))
+}
+
+func (t Tensor) DType() string {
+	return C.GoString(C.DType(t.p))
 }
 
 func (t Tensor) Shape() []int {
@@ -182,8 +197,138 @@ func (t Tensor) Shape() []int {
 	return shape
 }
 
-func Unflatten[T any](t Tensor) (any, error) {
-	return nil, nil
+func (t Tensor) NumBytes() int {
+	return int(C.NumBytes(t.p))
+}
+
+func (t Tensor) NumElem() int {
+	return int(C.NumElem(t.p))
+}
+
+func (t Tensor) ElemSize() int {
+	return int(C.ElemSize(t.p))
+}
+
+func (t Tensor) Bytes() []byte {
+	var bufferSize C.size_t = C.NumBytes(t.p)
+	buf := make([]byte, bufferSize)
+	copied := C.Bytes(t.p, unsafe.Pointer(&buf[0]), bufferSize)
+	if copied != bufferSize {
+		return nil
+	}
+	return buf
+}
+
+func deflatRecursive[T any](data []byte, shape []int, size int) (any, error) {
+	if len(shape) == 0 {
+		return nil, fmt.Errorf("Invalid shape")
+	}
+
+	if len(shape) == 1 {
+		if len(data)%size != 0 {
+			return nil, fmt.Errorf("data size %d is not a multiple of element size %d", len(data), size)
+		}
+		count := len(data) / size
+		result := make([]T, count)
+		buf := bytes.NewReader(data)
+		if err := binary.Read(buf, binary.NativeEndian, result); err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+
+	array := make([]any, shape[0])
+	sliceByteSize := len(data) / shape[0]
+	if sliceByteSize*shape[0] != len(data) {
+		return nil, fmt.Errorf("Jagged tensor")
+	}
+
+	for i := 0; i < shape[0]; i++ {
+		sub, err := deflatRecursive[T](data[i*sliceByteSize:(i+1)*sliceByteSize], shape[1:], size)
+		if err != nil {
+			return nil, err
+		}
+		array[i] = sub
+	}
+
+	return array, nil
+}
+
+func deflatRecursiveReflect[T any](data []byte, shape []int, size int) (any, error) {
+	if len(shape) == 0 {
+		return nil, fmt.Errorf("invalid shape")
+	}
+
+	if len(shape) == 1 {
+		if len(data)%size != 0 {
+			return nil, fmt.Errorf("data size %d is not multiple of element size %d", len(data), size)
+		}
+		count := len(data) / size
+		result := make([]T, count)
+		buf := bytes.NewReader(data)
+		if err := binary.Read(buf, binary.NativeEndian, result); err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+
+	arrayLen := shape[0]
+	sliceByteSize := len(data) / arrayLen
+	if sliceByteSize*arrayLen != len(data) {
+		return nil, fmt.Errorf("jagged tensor")
+	}
+
+	// Create a slice type of nested slice for the remaining dimensions
+	subSlice, err := deflatRecursiveReflect[T](data[:sliceByteSize], shape[1:], size)
+	if err != nil {
+		return nil, err
+	}
+	subSliceVal := reflect.ValueOf(subSlice)
+	subSliceType := subSliceVal.Type()
+
+	// Create the outer slice with length shape[0]
+	outSlice := reflect.MakeSlice(reflect.SliceOf(subSliceType), arrayLen, arrayLen)
+
+	for i := 0; i < arrayLen; i++ {
+		sub, err := deflatRecursiveReflect[T](data[i*sliceByteSize:(i+1)*sliceByteSize], shape[1:], size)
+		if err != nil {
+			return nil, err
+		}
+		outSlice.Index(i).Set(reflect.ValueOf(sub))
+	}
+
+	return outSlice.Interface(), nil
+}
+
+func deflatTensor(data []byte, shape []int, dtype string) (any, error) {
+	switch dtype {
+	case "f32":
+		return deflatRecursiveReflect[float32](data, shape, 4)
+	case "f64":
+		return deflatRecursiveReflect[float64](data, shape, 8)
+	case "i8":
+		return deflatRecursiveReflect[int8](data, shape, 1)
+	case "i16":
+		return deflatRecursiveReflect[int16](data, shape, 2)
+	case "i32":
+		return deflatRecursiveReflect[int32](data, shape, 4)
+	case "i64":
+		return deflatRecursiveReflect[int64](data, shape, 8)
+	case "u8":
+		return deflatRecursiveReflect[uint8](data, shape, 1)
+	case "u16":
+		return deflatRecursiveReflect[uint16](data, shape, 2)
+	case "u32":
+		return deflatRecursiveReflect[uint32](data, shape, 4)
+	case "u64":
+		return deflatRecursiveReflect[uint64](data, shape, 8)
+	default:
+		return nil, fmt.Errorf("unsupported dtype: %s", dtype)
+	}
+}
+
+func (t Tensor) Data() (any, error) {
+	return deflatTensor(t.Bytes(), t.Shape(), t.DType())
 }
 
 // Flatten takes an arbitrarily nested array (of arrays) of generic type T

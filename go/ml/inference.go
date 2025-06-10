@@ -18,19 +18,19 @@ import (
 )
 
 type InferenceInput[T any, K any] struct {
-	Data     []T
-	Callback chan<- []K
+	Data     T
+	Callback chan<- K
 }
 
-func InferenceAggregator[T any, K any](model Model, aggregatorChannel <-chan InferenceInput[T, K], batchSize int, timeoutMs time.Duration) {
+func InferenceAggregator[T any, K ~[]any](model Model, aggregatorChannel <-chan InferenceInput[T, K], batchSize int, timeoutMs time.Duration) {
 	batchData := make([]T, 0, batchSize)
-	batchChan := make([]chan<- []K, 0, batchSize)
+	batchChan := make([]chan<- K, 0, batchSize)
 
 	for true {
 		timeout := false
 		select {
 		case request := <-aggregatorChannel:
-			batchData = append(batchData, request.Data...)
+			batchData = append(batchData, request.Data)
 			batchChan = append(batchChan, request.Callback)
 		case <-time.After(timeoutMs * time.Millisecond):
 			timeout = true
@@ -38,33 +38,36 @@ func InferenceAggregator[T any, K any](model Model, aggregatorChannel <-chan Inf
 		}
 		if (len(batchChan) >= batchSize || timeout) && len(batchData) > 0 {
 			fmt.Printf(`*`)
-			var result Tensor
+			good := false
 			if flattened, err := Flatten[T](batchData); err == nil {
+				var result Tensor
 				tensor := CreateTensor(flattened)
 				if tensor.IsValid() {
 					result = model.Infer(tensor)
 				}
 				tensor.Delete()
-			}
-			if result.IsValid() {
-				fmt.Printf(`+`)
-				nShape := result.Shape()
-				if nShape[0] == len(batchChan) {
-					// TODO split result batch into individual results
-				}
-				for i, callback := range batchChan {
-					if i > 0 {
+				if result.IsValid() {
+					if data, err := result.Data(); err == nil {
+						nShape := result.Shape()
+						if nShape[0] == len(batchChan) {
+							if v, ok := data.([]K); ok {
+								fmt.Printf(`+`)
+								for i, callback := range batchChan {
+									callback <- v[i]
+								}
+								good = true
+							}
+						}
 					}
-					// TODO
-					//callback <- result
-					callback <- nil
 				}
-			} else {
+			}
+			if !good {
 				// No result returned, or there was an error.
 				// Returns nil to immediately notify the agent so that they stop waiting for the result.
 				fmt.Print(`!`)
+				var nilK K = nil
 				for _, callback := range batchChan {
-					callback <- nil
+					callback <- nilK
 				}
 			}
 			batchData = batchData[:0]
@@ -74,33 +77,6 @@ func InferenceAggregator[T any, K any](model Model, aggregatorChannel <-chan Inf
 }
 
 /*
-func simGenerateRandomData(id int, aggregatorChannel chan<- InferenceInput, numRequests int, dataSize int, wg *sync.WaitGroup) {
-    callback := make(chan []float32, 1)
-    defer close(callback)
-    defer wg.Done()
-
-    for range numRequests {
-        data := make([]float32, dataSize)
-        for i := 0; i < dataSize; i++ {
-            data[i] = rand.Float32()
-        }
-        fmt.Print(`:`)
-        aggregatorChannel <- InferenceInput{ data, callback }
-        select {
-            case result := <- callback:
-                if (len(result) == 0) {
-                    fmt.Printf(`(%v)`, id)
-                } else {
-                    fmt.Print(`|`)
-                }
-            case <-time.After(5 * time.Second):
-                fmt.Print(`?`)
-                return
-        }
-    }
-    fmt.Print(`.`)
-}
-
 func main() {
     batchSize := 100
     numSenders := 2*batchSize

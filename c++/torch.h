@@ -20,7 +20,8 @@ private:
 
 class Tensor {
 public:
-    Tensor(void* blob, at::IntArrayRef sizes, torch::TensorOptions& options) : tensor_{torch::from_blob(blob, sizes, options)} {}
+    Tensor(void* blob, at::IntArrayRef shape, torch::TensorOptions& options) :
+        tensor_{torch::from_blob(blob, shape, options).clone()} {}
     Tensor(torch::Tensor&& tensor) : tensor_{tensor} {}
     Tensor(Tensor const&) = delete;
     Tensor() = delete;
